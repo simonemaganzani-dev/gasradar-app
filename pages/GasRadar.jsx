@@ -180,7 +180,7 @@ function StationCard({ station, fuelKey, rank, index }) {
             </span>
           }
         </div>
-        <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="text-slate-50">
           {station.address}, {station.locality || station.municipality}
         </div>
         <div style={{ fontSize: 12, color: C.textMuted, marginTop: 1 }}>
@@ -350,16 +350,16 @@ export default function GasRadar() {
     setNearbyStations(nearby);
   }, [location, allStations, radius, fuelKey]);
 
-  // Fetch chargers via proxy when fuelKey=electric and location available
+  // Fetch chargers when fuelKey=electric and location available
   useEffect(() => {
     if (fuelKey !== "electric" || !location) return;
-    if (chargers.length > 0) return;
+    if (chargers.length > 0) return; // already loaded
     setChargersLoading(true);
-    ocmProxy({ lat: location.lat, lon: location.lon, radius })
-      .then((r) => setChargers(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setChargers([]))
-      .finally(() => setChargersLoading(false));
-  }, [fuelKey, location, radius]);
+    ocmProxy({ lat: location.lat, lon: location.lon, radius }).
+    then((r) => setChargers(r.data || [])).
+    catch(() => setChargers([])).
+    finally(() => setChargersLoading(false));
+  }, [tab, location, radius]);
 
   // Reset chargers when location/radius changes
   useEffect(() => {setChargers([]);}, [location, radius]);
@@ -370,6 +370,7 @@ export default function GasRadar() {
 
   const activeList = tab === "cheap" ? cheapStations : tab === "expensive" ? expensiveStations : brandStations;
 
+  // Helpers per colonnine elettriche
   const parseUsageCost = (str) => {if (!str) return Infinity;const m = str.match(/[\d,.]+/);return m ? parseFloat(m[0].replace(",", ".")) : Infinity;};
   const chargersWithCost = chargers.map((c) => ({ ...c, _cost: parseUsageCost(c.UsageCost), _power: c.Connections?.[0]?.PowerKW || 0 }));
   const getActiveChargers = () => {
@@ -414,7 +415,7 @@ export default function GasRadar() {
 
       <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'Inter', sans-serif", maxWidth: 480, margin: "0 auto", paddingBottom: 32, position: "relative" }}>
         
-        {/* Settings Panel Overlay */}
+        {/* Settings Panel */}
         {showSettings &&
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
@@ -422,8 +423,6 @@ export default function GasRadar() {
           animation: "fadeIn 0.3s ease"
         }} onClick={() => setShowSettings(false)} />
         }
-
-        {/* Settings Panel */}
         <div style={{
           position: "fixed", top: 0, right: 0, width: "100%", maxWidth: 480,
           height: "100vh", background: "#3a4556", zIndex: 201,
@@ -519,6 +518,7 @@ export default function GasRadar() {
             </div>
           </div>
         </div>
+      
 
         {/* STICKY HEADER */}
         <div style={{
@@ -544,11 +544,13 @@ export default function GasRadar() {
               background: "transparent", border: "none",
               color: "#fff", cursor: "pointer", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center",
               transition: "transform 0.2s",
+              textShadow: "0 3px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.3)",
               padding: 0
             }}
             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.1)"}
             onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
             title="Actualizar">
+            
             🔄
           </button>
           <button
@@ -557,16 +559,18 @@ export default function GasRadar() {
               background: "transparent", border: "none",
               color: "#fff", cursor: "pointer", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center",
               transition: "transform 0.2s",
+              textShadow: "0 3px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.3)",
               padding: 0
             }}
             onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.1)"}
             onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
             title="Impostazioni">
+            
             ⚙️
           </button>
         </div>
 
-        <div style={{ padding: "16px 14px" }}>
+        <div style={{ padding: "16px 14px" }} className="bg-stone-200">
 
           {/* FUEL SELECTOR — griglia 3x2 */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
@@ -587,6 +591,7 @@ export default function GasRadar() {
                   <span style={{ fontSize: 16 }}>{f.icon}</span>
                   <span>{f.short}</span>
                 </button>);
+
             })}
           </div>
 
@@ -595,12 +600,15 @@ export default function GasRadar() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 600, whiteSpace: "nowrap" }}>Radio:</span>
               <div style={{ flex: 1, position: "relative", height: 28, display: "flex", alignItems: "center" }}>
+                {/* Track */}
                 <div style={{ position: "absolute", left: 0, right: 0, height: 4, background: C.border, borderRadius: 2 }} />
+                {/* Fill */}
                 <div style={{
                   position: "absolute", left: 0, height: 4, borderRadius: 2,
                   background: C.blue,
                   width: `${RADIUS_OPTIONS.indexOf(radius) / (RADIUS_OPTIONS.length - 1) * 100}%`
                 }} />
+                {/* Tick marks */}
                 {RADIUS_OPTIONS.map((r, i) =>
                 <div
                   key={r}
@@ -616,7 +624,9 @@ export default function GasRadar() {
                     cursor: "pointer",
                     zIndex: 1
                   }} />
+
                 )}
+                {/* Invisible range input for dragging */}
                 <input
                   type="range"
                   min={0} max={RADIUS_OPTIONS.length - 1}
@@ -626,9 +636,11 @@ export default function GasRadar() {
                     position: "absolute", left: 0, right: 0, width: "100%",
                     opacity: 0, cursor: "pointer", height: 28, margin: 0
                   }} />
+                
               </div>
               <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 600, minWidth: 36, textAlign: "right" }}>{radius} km</span>
             </div>
+            {/* Labels */}
             <div style={{ display: "flex", justifyContent: "space-between", paddingLeft: 52, paddingRight: 44, marginTop: 2 }}>
               {RADIUS_OPTIONS.map((r) =>
               <span key={r} style={{ fontSize: 10, color: radius === r ? C.blue : C.textMuted, fontWeight: radius === r ? 700 : 500 }}>{r}</span>
@@ -695,6 +707,7 @@ export default function GasRadar() {
                   value={brandSearch}
                   onChange={(e) => setBrandSearch(e.target.value)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 10, fontSize: 13, outline: "none", fontFamily: "Inter, sans-serif", background: C.surfaceAlt, color: C.text }} />
+                
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {filteredBrands.map((b) =>
                   <button key={b} onClick={() => saveBrands(preferredBrands.includes(b) ? preferredBrands.filter((x) => x !== b) : [...preferredBrands, b])} style={{
@@ -748,6 +761,7 @@ export default function GasRadar() {
                    animation: `fadeInUp 0.3s ease both`,
                    animationDelay: `${i * 0.05}s`
                   }}>
+                        {/* Avatar — stesso stile di BrandAvatar ma verde ⚡ */}
                         <div style={{
                       width: 42, height: 42, borderRadius: "50%",
                       background: "#22c55e", color: "#fff",
@@ -755,6 +769,8 @@ export default function GasRadar() {
                       fontWeight: 800, fontSize: 18, flexShrink: 0,
                       boxShadow: "0 2px 8px rgba(34,197,94,0.4)"
                     }}>⚡</div>
+
+                        {/* Contenuto centrale */}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                             <span style={{ fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
@@ -787,11 +803,14 @@ export default function GasRadar() {
                             {power && <span style={{ background: "#1a3a2a", color: "#22c55e", fontSize: 10, fontWeight: 700, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{power}</span>}
                           </div>
                         </div>
+
+                        {/* Destra: usageCost (come prezzo) + pulsanti mappa */}
                          <div style={{ textAlign: "right", flexShrink: 0, alignSelf: "flex-start", minWidth: 110 }}>
                            {usageCost ?
                         <div style={{ fontWeight: 800, fontSize: 20, color: C.accent, marginBottom: 5, textAlign: "right" }}>
                                {usageCost}
                              </div> :
+
                         <span style={{ color: C.textMuted, fontSize: 13, display: "block", marginBottom: 5, textAlign: "right" }}>N/D</span>
                         }
                            <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
@@ -800,7 +819,7 @@ export default function GasRadar() {
                           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
                           background: C.blue, color: "#fff",
                           padding: "4px 8px", borderRadius: 8,
-                          fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap"
+                          fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
                           }}>
                                <svg width="10" height="10" viewBox="0 0 814 1000" fill="white" xmlns="http://www.w3.org/2000/svg">
                                  <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105.5-57.8-155.5-127.4C46 523 0 443.7 0 368.8c0-170.2 111.4-260.1 220.9-260.1 75.5 0 138.4 50 185.3 50 44.9 0 115.1-52.5 199.1-52.5zM480.3 49.4c18.4-21.4 32.1-51.6 32.1-81.9 0-4.2-.3-8.4-.9-11.7-30.3 1.2-66.1 20.2-87.8 44.4-16.5 18.4-31.8 48.9-31.8 79.6 0 4.5.6 9 1 10.5 1.9.3 5.2.6 8.4.6 27.4 0 60.1-18.1 79-41.5z" />
@@ -812,7 +831,7 @@ export default function GasRadar() {
                           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
                           background: C.blue, color: "#fff",
                           padding: "4px 8px", borderRadius: 8,
-                          fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap"
+                          fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
                           }}>
                              <svg width="10" height="10" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                                <path fill="#4285F4" d="M24 4C13 4 4 13 4 24s9 20 20 20 20-9 20-20S35 4 24 4z" />
@@ -825,6 +844,7 @@ export default function GasRadar() {
                           </div>
                         </div>
                       </div>);
+
               })}
                 </div> :
             activeList.length === 0 ?
@@ -833,6 +853,7 @@ export default function GasRadar() {
               "Selecciona tus marcas favoritas arriba ⭐" :
               "No hay gasolineras en este radio 📍"}
                 </div> :
+
             activeList.map((s, i) =>
             <StationCard key={s.id || i} station={s} fuelKey={fuelKey} rank={i + 1} index={i} />
             )
@@ -847,6 +868,7 @@ export default function GasRadar() {
                   color: "#6b7280", fontSize: 13, fontWeight: 500,
                   textDecoration: "none", borderBottom: "1px solid #d1d5db", paddingBottom: 2
                 }}>
+                
                     💬 Deja tu opinión
                   </a>
                   <div style={{ marginTop: 20 }}>
@@ -864,6 +886,7 @@ export default function GasRadar() {
                     padding: "10px 22px", textDecoration: "none",
                     boxShadow: "0 2px 12px rgba(255,94,91,0.35)"
                   }}>
+                  
                       <img src="https://storage.ko-fi.com/cdn/cup-border.png" alt="Ko-fi" style={{ width: 20, height: 20 }} />
                       Invítame un café
                     </a>
@@ -881,4 +904,5 @@ export default function GasRadar() {
         </div>
       </div>
     </>);
+
 }
