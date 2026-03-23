@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { base44 } from "@/api/base44Client";
 import { ocmProxy } from "@/functions/ocmProxy";
+import { getRatings } from "@/functions/getRatings";
+import RefuelPrompt from "@/components/RefuelPrompt";
+import StarRating from "@/components/StarRating";
 
 const CDN_URL = "https://simonemaganzani-dev.github.io/gasradar-data-refresh/gasdata.json";
 const LOGO_URL = "https://media.base44.com/images/public/69bc7d91ef710a82d9b2208a/fc0473832_logoGasRadar.jpg";
@@ -131,13 +135,13 @@ const C = {
 
 const isAppleDevice = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && !window.MSStream;
 
-function StationCard({ station, fuelKey, rank, index }) {
+function StationCard({ station, fuelKey, rank, index, rating, onMapsClick }) {
   const price = station.prices[fuelKey];
   const highlight = rank === 1;
-  const rankLabel = rank === 1 ? "🥇 Mejor precio" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
   const open = isStationOpen(station.schedule);
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lon}`;
   const appleMapsUrl = `maps://maps.apple.com/?daddr=${station.lat},${station.lon}&dirflg=d`;
+  const stationInfo = { station_id: String(station.id), station_type: "fuel", station_name: station.name };
 
   return (
     <div style={{
@@ -159,16 +163,7 @@ function StationCard({ station, fuelKey, rank, index }) {
           <span style={{ fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
             {station.name}
           </span>
-          {rankLabel &&
-          <span style={{
-            background: rank === 1 ? C.accentLight : C.surfaceAlt,
-            color: rank === 1 ? C.accent : C.textMid,
-            fontSize: 11, fontWeight: 700,
-            borderRadius: 20, padding: "2px 8px"
-          }}>
-              {rankLabel}
-            </span>
-          }
+
           {open !== null &&
           <span style={{
             background: open ? "#dcfce7" : "#fee2e2",
@@ -180,6 +175,12 @@ function StationCard({ station, fuelKey, rank, index }) {
             </span>
           }
         </div>
+        {rating &&
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+            <StarRating value={Math.round(rating.average_rating)} readonly size={13} />
+            <span style={{ fontSize: 10, color: C.textMuted }}>({rating.total_votes})</span>
+          </div>
+        }
         <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} className="text-slate-50">
           {station.address}, {station.locality || station.municipality}
         </div>
@@ -187,46 +188,48 @@ function StationCard({ station, fuelKey, rank, index }) {
           📍 {station.dist.toFixed(1)} km
         </div>
       </div>
-      <div style={{ textAlign: "right", flexShrink: 0, alignSelf: "flex-start" }}>
-        {price ?
-        <div style={{ fontWeight: 800, fontSize: 20, color: highlight ? C.accent : C.text }}>
-            {price.toFixed(3)}<span style={{ fontSize: 13, fontWeight: 500 }}> €</span>
-          </div> :
+      <div style={{ display: "flex", flexDirection: "column", alignSelf: "stretch", justifyContent: "space-between" }}>
+        <div style={{ textAlign: "right" }}>
+          {price ?
+          <div style={{ fontWeight: 800, fontSize: 20, color: highlight ? C.accent : C.text }}>
+              {price.toFixed(3)}<span style={{ fontSize: 13, fontWeight: 500 }}> €</span>
+            </div> :
 
-        <span style={{ color: C.textMuted, fontSize: 13 }}>N/D</span>
-        }
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 5 }}>
-          {isAppleDevice &&
-          <a href={appleMapsUrl}
-          style={{
-            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
-            background: C.blue, color: "#fff",
-            padding: "4px 10px", borderRadius: 8,
-            fontSize: 11, textDecoration: "none", fontWeight: 600
-          }}>
-              <svg width="11" height="11" viewBox="0 0 814 1000" fill="white" xmlns="http://www.w3.org/2000/svg">
-                <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105.5-57.8-155.5-127.4C46 523 0 443.7 0 368.8c0-170.2 111.4-260.1 220.9-260.1 75.5 0 138.4 50 185.3 50 44.9 0 115.1-52.5 199.1-52.5zM480.3 49.4c18.4-21.4 32.1-51.6 32.1-81.9 0-4.2-.3-8.4-.9-11.7-30.3 1.2-66.1 20.2-87.8 44.4-16.5 18.4-31.8 48.9-31.8 79.6 0 4.5.6 9 1 10.5 1.9.3 5.2.6 8.4.6 27.4 0 60.1-18.1 79-41.5z" />
-              </svg>
-              Apple Maps
-            </a>
+          <span style={{ color: C.textMuted, fontSize: 13 }}>N/D</span>
           }
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
-          onClick={() => fetch(TRACK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: "maps_click" }) }).catch(() => {})}
-          style={{
-            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
-            background: C.blue, color: "#fff",
-            padding: "4px 10px", borderRadius: 8,
-            fontSize: 11, textDecoration: "none", fontWeight: 600
-          }}>
-            <svg width="11" height="11" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-              <path fill="#4285F4" d="M24 4C13 4 4 13 4 24s9 20 20 20 20-9 20-20S35 4 24 4z" />
-              <path fill="#34A853" d="M15 24c0-5 4-9 9-9s9 4 9 9-4 9-9 9-9-4-9-9z" />
-              <path fill="#FBBC05" d="M24 15c-5 0-9 4-9 9h18c0-5-4-9-9-9z" />
-              <path fill="#EA4335" d="M24 33c5 0 9-4 9-9H15c0 5 4 9 9 9z" />
-            </svg>
-            Google Maps
-          </a>
         </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                          {isAppleDevice &&
+                          <a href={appleMapsUrl} onClick={() => onMapsClick && onMapsClick(stationInfo)}
+                          style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
+                          background: C.blue, color: "#fff",
+                          padding: "4px 10px", borderRadius: 8,
+                          fontSize: 11, textDecoration: "none", fontWeight: 600
+                          }}>
+                              <svg width="11" height="11" viewBox="0 0 814 1000" fill="white" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105.5-57.8-155.5-127.4C46 523 0 443.7 0 368.8c0-170.2 111.4-260.1 220.9-260.1 75.5 0 138.4 50 185.3 50 44.9 0 115.1-52.5 199.1-52.5zM480.3 49.4c18.4-21.4 32.1-51.6 32.1-81.9 0-4.2-.3-8.4-.9-11.7-30.3 1.2-66.1 20.2-87.8 44.4-16.5 18.4-31.8 48.9-31.8 79.6 0 4.5.6 9 1 10.5 1.9.3 5.2.6 8.4.6 27.4 0 60.1-18.1 79-41.5z" />
+                              </svg>
+                              Apple Maps
+                            </a>
+                          }
+                          <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                          onClick={() => { onMapsClick && onMapsClick(stationInfo); base44.analytics.track({ eventName: "maps_clicked", properties: { provider: "google" } }); fetch(TRACK_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: "maps_click" }) }).catch(() => {}); }}
+                          style={{
+                            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
+                            background: C.blue, color: "#fff",
+                            padding: "4px 10px", borderRadius: 8,
+                            fontSize: 11, textDecoration: "none", fontWeight: 600
+                          }}>
+                            <svg width="11" height="11" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                              <path fill="#4285F4" d="M24 4C13 4 4 13 4 24s9 20 20 20 20-9 20-20S35 4 24 4z" />
+                              <path fill="#34A853" d="M15 24c0-5 4-9 9-9s9 4 9 9-4 9-9 9-9-4-9-9z" />
+                              <path fill="#FBBC05" d="M24 15c-5 0-9 4-9 9h18c0-5-4-9-9-9z" />
+                              <path fill="#EA4335" d="M24 33c5 0 9-4 9-9H15c0 5 4 9 9 9z" />
+                            </svg>
+                            Google Maps
+                          </a>
+                        </div>
       </div>
     </div>);
 
@@ -278,6 +281,12 @@ export default function GasRadar() {
   const [chargers, setChargers] = useState([]);
   const [chargersLoading, setChargersLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [version, setVersion] = useState("v?.?.?");
+  const [vehicleFuelType, setVehicleFuelType] = useState(() => localStorage.getItem("gasradar_vehicle_fuel") || "");
+  const [vehicleCapacity, setVehicleCapacity] = useState(() => localStorage.getItem("gasradar_vehicle_capacity") || "");
+  const [ratings, setRatings] = useState({});
+  const [refuelPrompt, setRefuelPrompt] = useState(null); // { station_id, station_type, station_name }
+  const pendingMapsStation = useRef(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("gasradar_brands");
@@ -287,6 +296,19 @@ export default function GasRadar() {
     const savedRadius = localStorage.getItem("gasradar_radius");
     if (savedRadius) setRadius(parseInt(savedRadius));
     const interval = setInterval(() => setPulse((p) => !p), 1500);
+    // Fetch version from GitHub latest commit
+    fetch("https://api.github.com/repos/simonemaganzani-dev/gasradar-app/commits")
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.length > 0 && data[0].commit) {
+          const message = data[0].commit.message;
+          const versionMatch = message.match(/v([\d.]+)/);
+          if (versionMatch) {
+            setVersion(`v${versionMatch[1]}`);
+          }
+        }
+      })
+      .catch(() => setVersion("v1.3.2.1"));
     return () => clearInterval(interval);
   }, []);
 
@@ -301,13 +323,22 @@ export default function GasRadar() {
     catch(() => {});
   }, []);
 
-  const saveBrands = (brands) => {setPreferredBrands(brands);localStorage.setItem("gasradar_brands", JSON.stringify(brands));};
+  const saveBrands = (brands) => {
+    setPreferredBrands(brands);
+    localStorage.setItem("gasradar_brands", JSON.stringify(brands));
+    base44.analytics.track({ eventName: "brands_selected", properties: { brands_count: brands.length } });
+  };
   const saveFuel = (key) => {
     setFuelKey(key);
     localStorage.setItem("gasradar_fuel", key);
+    base44.analytics.track({ eventName: "fuel_type_selected", properties: { fuel_type: key } });
     if (tab === "electric") setTab("cheap");
   };
-  const saveRadius = (r) => {setRadius(r);localStorage.setItem("gasradar_radius", r.toString());};
+  const saveRadius = (r) => {
+    setRadius(r);
+    localStorage.setItem("gasradar_radius", r.toString());
+    base44.analytics.track({ eventName: "radius_changed", properties: { radius_km: r } });
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);setError("");setStatus("📡 Cargando precios...");
@@ -330,7 +361,11 @@ export default function GasRadar() {
     if (!navigator.geolocation) {setError("❌ Geolocalización no soportada");return;}
     setStatus("📍 Detectando posición...");
     navigator.geolocation.getCurrentPosition(
-      (pos) => {setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });setStatus("");},
+      (pos) => {
+        setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        base44.analytics.track({ eventName: "location_detected", properties: { lat: Math.round(pos.coords.latitude * 10) / 10, lon: Math.round(pos.coords.longitude * 10) / 10 } });
+        setStatus("");
+      },
       () => {setError("❌ Permiso de ubicación denegado");setStatus("");},
       { timeout: 10000, maximumAge: 60000 }
     );
@@ -350,19 +385,44 @@ export default function GasRadar() {
     setNearbyStations(nearby);
   }, [location, allStations, radius, fuelKey]);
 
-  // Fetch chargers when fuelKey=electric and location available
+  // Fetch chargers when fuelKey=electric and location/radius changes
   useEffect(() => {
     if (fuelKey !== "electric" || !location) return;
-    if (chargers.length > 0) return; // already loaded
     setChargersLoading(true);
-    ocmProxy({ lat: location.lat, lon: location.lon, radius }).
-    then((r) => setChargers(r.data || [])).
-    catch(() => setChargers([])).
-    finally(() => setChargersLoading(false));
-  }, [tab, location, radius]);
+    setChargers([]);
+    ocmProxy({ lat: location.lat, lon: location.lon, radius })
+      .then((r) => setChargers(r.data || []))
+      .catch(() => setChargers([]))
+      .finally(() => setChargersLoading(false));
+  }, [location, radius, fuelKey]);
 
-  // Reset chargers when location/radius changes
-  useEffect(() => {setChargers([]);}, [location, radius]);
+  // Fetch ratings when nearby stations or chargers change
+  useEffect(() => {
+    const ids = [
+      ...nearbyStations.map(s => String(s.id)),
+      ...chargers.map(c => String(c.ID))
+    ].filter(Boolean);
+    if (ids.length === 0) return;
+    getRatings({ station_ids: ids })
+      .then(r => setRatings(r.data?.ratings || {}))
+      .catch(() => {});
+  }, [nearbyStations, chargers]);
+
+  // Detect return from Maps app and show refuel prompt
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && pendingMapsStation.current) {
+        setRefuelPrompt(pendingMapsStation.current);
+        pendingMapsStation.current = null;
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
+  const handleMapsClick = (station) => {
+    pendingMapsStation.current = station;
+  };
 
   const cheapStations = [...nearbyStations].filter((s) => s.prices[fuelKey] !== null).sort((a, b) => a.prices[fuelKey] - b.prices[fuelKey]).slice(0, 10);
   const expensiveStations = [...nearbyStations].filter((s) => s.prices[fuelKey] !== null).sort((a, b) => b.prices[fuelKey] - a.prices[fuelKey]).slice(0, 10);
@@ -421,7 +481,7 @@ export default function GasRadar() {
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
           background: "rgba(0,0,0,0.4)", zIndex: 200,
           animation: "fadeIn 0.3s ease"
-        }} onClick={() => setShowSettings(false)} />
+        }} onClick={() => { setShowSettings(false); base44.analytics.track({ eventName: "settings_closed" }); }} />
         }
         <div style={{
           position: "fixed", top: 0, right: 0, width: "100%", maxWidth: 480,
@@ -432,7 +492,7 @@ export default function GasRadar() {
         }}>
           <div style={{ padding: "16px 16px", display: "flex", justifyContent: "flex-start" }}>
             <button
-              onClick={() => setShowSettings(false)}
+              onClick={() => { setShowSettings(false); base44.analytics.track({ eventName: "settings_closed" }); }}
               style={{
                 background: "transparent", border: "none",
                 color: "#fff", cursor: "pointer", fontSize: 24,
@@ -444,7 +504,8 @@ export default function GasRadar() {
           <div style={{ flex: 1, padding: "16px", overflowY: "auto" }}>
             {/* Login Section */}
             <div style={{ marginBottom: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 10 }}>Accedi</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Login usuario</h3>
+              <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>Disponible en breve</p>
               <div style={{
                 background: "#2a3340", borderRadius: 12, padding: 12,
                 display: "flex", gap: 8, opacity: 0.6, pointerEvents: "none"
@@ -463,37 +524,65 @@ export default function GasRadar() {
             {/* Mi Vehiculo Section */}
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 10 }}>Mi Vehículo</h3>
-              <div style={{
-                background: "#2a3340", borderRadius: 12, padding: 12,
-                opacity: 0.6, pointerEvents: "none"
-              }}>
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, color: "#a8b0c8", marginBottom: 6 }}>Tipo de motor</div>
-                  <div style={{
-                    background: "#1a2332", borderRadius: 8, padding: 10,
-                    display: "flex", gap: 4, flexWrap: "wrap"
-                  }}>
-                    {["Diésel", "Gasolina", "GLP", "Eléctrico"].map((type) => (
-                      <div key={type} style={{
-                        flex: 1, minWidth: 70, background: "#2a3340", borderRadius: 6,
-                        padding: "6px 8px", textAlign: "center", fontSize: 11, color: "#a8b0c8"
-                      }}>{type}</div>
+              <div style={{ background: "#c5c0bb", borderRadius: 12, padding: 12 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>Tipo de motor</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {[
+                      { label: "Diésel", value: "gasoilA" },
+                      { label: "Gasolina", value: "gasolina95" },
+                      { label: "GLP", value: "glp" },
+                      { label: "Eléctrico", value: "electric" }
+                    ].map(({ label, value }) => (
+                      <button key={value}
+                        onClick={() => {
+                          setVehicleFuelType(value);
+                          localStorage.setItem("gasradar_vehicle_fuel", value);
+                        }}
+                        style={{
+                          flex: 1, minWidth: 70, borderRadius: 6,
+                          padding: "8px 6px", textAlign: "center", fontSize: 11, fontWeight: 600,
+                          cursor: "pointer", border: "1.5px solid",
+                          background: vehicleFuelType === value ? C.accent : "#a8a39e",
+                          color: vehicleFuelType === value ? "#111" : "#333",
+                          borderColor: vehicleFuelType === value ? C.accent : "#8a8580"
+                        }}>{label}</button>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, color: "#a8b0c8", marginBottom: 6 }}>Capacidad depósito</div>
-                  <div style={{
-                    background: "#1a2332", borderRadius: 8, padding: 10,
-                    fontSize: 12, color: "#a8b0c8"
-                  }}>📦 40L / 60kWh</div>
+                  <div style={{ fontSize: 11, color: "#555", marginBottom: 6 }}>
+                    {vehicleFuelType === "electric" ? "Capacidad batería (kWh)" : "Capacidad depósito (litros)"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={vehicleCapacity}
+                      onChange={(e) => {
+                        setVehicleCapacity(e.target.value);
+                        localStorage.setItem("gasradar_vehicle_capacity", e.target.value);
+                      }}
+                      placeholder={vehicleFuelType === "electric" ? "es. 60" : "es. 50"}
+                      style={{
+                        flex: 1, background: "#a8a39e", border: "1.5px solid #8a8580",
+                        borderRadius: 8, padding: "8px 12px",
+                        fontSize: 13, color: "#111", outline: "none", fontFamily: "Inter, sans-serif"
+                      }}
+                    />
+                    <span style={{ fontSize: 12, color: "#555", minWidth: 30 }}>
+                      {vehicleFuelType === "electric" ? "kWh" : "L"}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Price Alerts Section */}
             <div>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 10 }}>Alertas de Precio</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>Alertas de Precio</h3>
+              <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 10 }}>Disponible en breve</p>
               <div style={{
                 background: "#2a3340", borderRadius: 12, padding: 12,
                 opacity: 0.6, pointerEvents: "none"
@@ -554,7 +643,7 @@ export default function GasRadar() {
             🔄
           </button>
           <button
-            onClick={() => setShowSettings(true)}
+            onClick={() => { setShowSettings(true); base44.analytics.track({ eventName: "settings_opened" }); }}
             style={{
               background: "transparent", border: "none",
               color: "#fff", cursor: "pointer", fontSize: 28, display: "flex", alignItems: "center", justifyContent: "center",
@@ -575,20 +664,19 @@ export default function GasRadar() {
           {/* FUEL SELECTOR — griglia 3x2 */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
             {FUEL_TYPES.map((f) => {
-              const isElec = f.key === "electric";
               const active = fuelKey === f.key;
               return (
                 <button key={f.key} onClick={() => saveFuel(f.key)} style={{
-                  background: active ? isElec ? "#22c55e" : C.accent : C.surface,
+                  background: active ? C.accent : C.surface,
                   color: active ? "#111" : C.textMid,
-                  border: `1.5px solid ${active ? isElec ? "#22c55e" : C.accent : C.border}`,
-                  borderRadius: 10, padding: "8px 4px",
+                  border: `1.5px solid ${active ? C.accent : C.border}`,
+                  borderRadius: 10, padding: "6px 8px",
                   cursor: "pointer", fontSize: 12, fontWeight: 600,
-                  boxShadow: active ? `0 4px 12px ${isElec ? "rgba(34,197,94,0.35)" : "rgba(240,195,15,0.35)"}` : "none",
+                  boxShadow: active ? `0 4px 12px rgba(240,195,15,0.35)` : "none",
                   transition: "all 0.15s",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 2
+                  display: "flex", flexDirection: "row", alignItems: "center", gap: 4
                 }}>
-                  <span style={{ fontSize: 16 }}>{f.icon}</span>
+                  <span style={{ fontSize: 14 }}>{f.icon}</span>
                   <span>{f.short}</span>
                 </button>);
 
@@ -666,28 +754,54 @@ export default function GasRadar() {
           {status && <div style={{ background: C.blueLight, color: C.blue, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, fontWeight: 500 }}>{status}</div>}
           {error && <div style={{ background: C.dangerLight, color: C.danger, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, fontWeight: 500 }}>{error}</div>}
 
+          {!location &&
+          <div style={{ textAlign: "center", fontSize: 10, color: C.textMuted, fontWeight: 400, paddingTop: 14 }}>
+            GasRadar {version}
+          </div>
+          }
+
           {nearbyStations.length > 0 && <StatsRow stations={nearbyStations} fuelKey={fuelKey} />}
 
           {location &&
           <>
-              <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+              {/* Chrome-style tabs */}
+              <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 0, borderBottom: `2px solid #c5c0bb`, gap: 2 }}>
                 {[
-              { key: "cheap", label: fuelKey === "electric" ? "💚 Más baratas" : "💚 Más baratas" },
-              { key: "expensive", label: fuelKey === "electric" ? "⚡ Más rápida" : "🔴 Más caras" },
-              { key: "brands", label: `⭐ Marcas${preferredBrands.length ? ` (${preferredBrands.length})` : ""}` }].
-              map((t) =>
-              <button key={t.key} onClick={() => setTab(t.key)} style={{
-                flex: 1, padding: "8px 4px",
-                background: tab === t.key ? fuelKey === "electric" ? "#22c55e" : C.accent : C.surface,
-                color: tab === t.key ? "#111" : C.textMid,
-                border: `1.5px solid ${tab === t.key ? fuelKey === "electric" ? "#22c55e" : C.accent : C.border}`,
-                borderRadius: 10, cursor: "pointer",
-                fontSize: 11, fontWeight: 600
-              }}>
-                    {t.label}
-                  </button>
-              )}
+                  { key: "cheap", label: fuelKey === "electric" ? "💚 Más baratas" : "💚 Más baratas" },
+                  { key: "expensive", label: fuelKey === "electric" ? "⚡ Más rápida" : "🔴 Más caras" },
+                  { key: "brands", label: `⭐ Marcas${preferredBrands.length ? ` (${preferredBrands.length})` : ""}` }
+                ].map((t) => {
+                  const isActive = tab === t.key;
+                  const activeColor = fuelKey === "electric" ? "#16a34a" : "#b8920a";
+                  return (
+                    <button key={t.key} onClick={() => { setTab(t.key); base44.analytics.track({ eventName: "tab_selected", properties: { tab: t.key } }); }} style={{
+                      flex: 1, padding: "9px 6px 10px",
+                      background: isActive
+                        ? "linear-gradient(180deg, #dedad5 0%, #c5c0bb 60%)"
+                        : "linear-gradient(180deg, #706c68 0%, #8a8680 40%, #7a7672 100%)",
+                      color: isActive ? activeColor : "#3a3530",
+                      border: "none",
+                      borderTop: `2px solid ${isActive ? activeColor : "#555250"}`,
+                      borderLeft: "1px solid #55524f",
+                      borderRight: "1px solid #55524f",
+                      borderBottom: isActive ? `2px solid #c5c0bb` : "1px solid #3a3835",
+                      marginBottom: isActive ? -2 : 0,
+                      cursor: "pointer",
+                      fontSize: 11, fontWeight: isActive ? 700 : 500,
+                      transition: "all 0.15s",
+                      borderRadius: "6px 6px 0 0",
+                      position: "relative",
+                      boxShadow: isActive
+                        ? "inset 0 1px 2px rgba(255,255,255,0.6), 0 -1px 4px rgba(0,0,0,0.2)"
+                        : "inset 0 -2px 4px rgba(0,0,0,0.3), inset 0 1px 1px rgba(255,255,255,0.1)"
+                    }}>
+                      {t.label}
+                    </button>
+                  );
+                })}
               </div>
+              {/* Results panel */}
+              <div style={{ background: "#c5c0bb", borderRadius: "0 0 12px 12px", padding: "14px 10px 4px", marginBottom: 14 }}>
 
               {tab === "brands" &&
             <div style={{ marginBottom: 14 }}>
@@ -727,7 +841,7 @@ export default function GasRadar() {
             }
 
               {fuelKey === "electric" ?
-            <div>
+            <div style={{ margin: "0 0px" }}>
                   {chargersLoading &&
               <div style={{ textAlign: "center", color: C.textMuted, padding: "32px 0", fontSize: 14 }}>⏳ Buscando cargadores...</div>
               }
@@ -776,16 +890,7 @@ export default function GasRadar() {
                             <span style={{ fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>
                               {operator}
                             </span>
-                            {fuelKey === "electric" && tab === "cheap" && i < 3 &&
-                            <span style={{
-                          background: i === 0 ? C.accentLight : C.surfaceAlt,
-                          color: i === 0 ? C.accent : C.textMid,
-                          fontSize: 11, fontWeight: 700,
-                          borderRadius: 20, padding: "2px 8px"
-                        }}>
-                              {i === 0 ? "🥇 Más barata" : i === 1 ? "🥈" : "🥉"}
-                            </span>
-                            }
+
                             <span style={{
                           background: isOk ? "#dcfce7" : "#fee2e2",
                           color: isOk ? "#16a34a" : "#dc2626",
@@ -802,23 +907,31 @@ export default function GasRadar() {
                             {connType && <span style={{ background: C.surfaceAlt, color: C.textMid, fontSize: 10, fontWeight: 600, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{connType}</span>}
                             {power && <span style={{ background: "#1a3a2a", color: "#22c55e", fontSize: 10, fontWeight: 700, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap" }}>{power}</span>}
                           </div>
+                          {ratings[String(c.ID)] &&
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                              <StarRating value={Math.round(ratings[String(c.ID)].average_rating)} readonly size={13} />
+                              <span style={{ fontSize: 10, color: C.textMuted }}>({ratings[String(c.ID)].total_votes})</span>
+                            </div>
+                          }
                         </div>
 
                         {/* Destra: usageCost (come prezzo) + pulsanti mappa */}
-                         <div style={{ textAlign: "right", flexShrink: 0, alignSelf: "flex-start", minWidth: 110 }}>
-                           {usageCost ?
-                        <div style={{ fontWeight: 800, fontSize: 20, color: C.accent, marginBottom: 5, textAlign: "right" }}>
-                               {usageCost}
-                             </div> :
+                         <div style={{ display: "flex", flexDirection: "column", alignSelf: "stretch", justifyContent: "space-between", minWidth: 110 }}>
+                           <div style={{ textAlign: "right" }}>
+                             {usageCost ?
+                          <div style={{ fontWeight: 800, fontSize: 20, color: i === 0 ? C.accent : C.text }}>
+                                 {usageCost}
+                               </div> :
 
-                        <span style={{ color: C.textMuted, fontSize: 13, display: "block", marginBottom: 5, textAlign: "right" }}>N/D</span>
-                        }
-                           <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                          <span style={{ color: C.textMuted, fontSize: 13 }}>N/D</span>
+                          }
+                           </div>
+                           <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
                            {isAppleDevice &&
-                          <a href={appleMapsUrl} style={{
+                          <a href={appleMapsUrl} onClick={() => handleMapsClick({ station_id: String(c.ID), station_type: "electric", station_name: operator })} style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
                           background: C.blue, color: "#fff",
-                          padding: "4px 8px", borderRadius: 8,
+                          padding: "4px 10px", borderRadius: 8,
                           fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
                           }}>
                                <svg width="10" height="10" viewBox="0 0 814 1000" fill="white" xmlns="http://www.w3.org/2000/svg">
@@ -827,12 +940,12 @@ export default function GasRadar() {
                                Maps
                              </a>
                           }
-                           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" style={{
-                          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
-                          background: C.blue, color: "#fff",
-                          padding: "4px 8px", borderRadius: 8,
-                          fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
-                          }}>
+                           <a href={mapsUrl} target="_blank" rel="noopener noreferrer" onClick={() => { handleMapsClick({ station_id: String(c.ID), station_type: "electric", station_name: operator }); base44.analytics.track({ eventName: "maps_clicked", properties: { provider: "google" } }); }} style={{
+                           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4,
+                           background: C.blue, color: "#fff",
+                           padding: "4px 10px", borderRadius: 8,
+                           fontSize: 10, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
+                           }}>
                              <svg width="10" height="10" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                                <path fill="#4285F4" d="M24 4C13 4 4 13 4 24s9 20 20 20 20-9 20-20S35 4 24 4z" />
                                <path fill="#34A853" d="M15 24c0-5 4-9 9-9s9 4 9 9-4 9-9 9-9-4-9-9z" />
@@ -855,53 +968,58 @@ export default function GasRadar() {
                 </div> :
 
             activeList.map((s, i) =>
-            <StationCard key={s.id || i} station={s} fuelKey={fuelKey} rank={i + 1} index={i} />
+            <StationCard key={s.id || i} station={s} fuelKey={fuelKey} rank={i + 1} index={i}
+              rating={ratings[String(s.id)]}
+              onMapsClick={handleMapsClick} />
             )
             }
+
+              </div>{/* end results panel */}
 
               {(fuelKey === "electric" ? activeChargers.length > 0 && !chargersLoading : activeList.length > 0) &&
             <div style={{ marginTop: 24, marginBottom: 8, textAlign: "center" }}>
                   <a
-                href="mailto:simone@peekhuboo.com"
+                href="mailto:suggestions@gasradar.app"
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
                   color: "#6b7280", fontSize: 13, fontWeight: 500,
                   textDecoration: "none", borderBottom: "1px solid #d1d5db", paddingBottom: 2
                 }}>
-                
                     💬 Deja tu opinión
                   </a>
-                  <div style={{ marginTop: 20 }}>
-                    <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10, fontWeight: 500 }}>
-                      ¿Has ahorrado hoy con GasRadar?
-                    </div>
-                    <a
-                  href="https://ko-fi.com/gasradar"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 8,
-                    background: "#FF5E5B", color: "#ffffff",
-                    fontWeight: 700, fontSize: 14, borderRadius: 12,
-                    padding: "10px 22px", textDecoration: "none",
-                    boxShadow: "0 2px 12px rgba(255,94,91,0.35)"
-                  }}>
-                  
-                      <img src="https://storage.ko-fi.com/cdn/cup-border.png" alt="Ko-fi" style={{ width: 20, height: 20 }} />
-                      Invítame un café
-                    </a>
-                  </div>
                   {totalVisits !== null &&
               <div style={{ marginTop: 20, fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>
                       ⛽ GasRadar ha sido usado {totalVisits.toLocaleString("es-ES")} veces
                     </div>
               }
+                  <div style={{ marginTop: 24, fontSize: 10, color: "#6b7280", fontWeight: 400 }}>
+                    GasRadar {version}
+                  </div>
                 </div>
             }
             </>
           }
 
         </div>
+
+        {refuelPrompt &&
+          <RefuelPrompt
+            station={refuelPrompt}
+            onClose={() => {
+              setRefuelPrompt(null);
+              // Refresh ratings after voting
+              const ids = [
+                ...nearbyStations.map(s => String(s.id)),
+                ...chargers.map(c => String(c.ID))
+              ].filter(Boolean);
+              if (ids.length > 0) {
+                getRatings({ station_ids: ids })
+                  .then(r => setRatings(r.data?.ratings || {}))
+                  .catch(() => {});
+              }
+            }}
+          />
+        }
       </div>
     </>);
 
